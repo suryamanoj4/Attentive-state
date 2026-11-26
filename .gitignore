@@ -1,0 +1,33 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+build/
+dist/
+
+# Experiments: logs, runs, checkpoints, caches
+runs/
+logs/
+checkpoints/
+outputs/
+wandb/
+data/
+*.pt
+*.ckpt
+*.log
+slurm-*.out
+
+# Large downloaded research source copies (not needed for the code)
+research/raw/
+research/papers/
+
+# Editor/OS
+.idea/
+.vscode/
+.DS_Store
