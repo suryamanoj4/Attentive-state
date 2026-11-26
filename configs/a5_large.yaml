@@ -1,0 +1,47 @@
+name: a5_large
+seed: 0
+device: auto
+output_dir: runs
+
+task:
+  name: a5
+  group:
+    group: A5
+    train_min_len: 3
+    train_max_len: 20
+    eval_lengths: [20, 40, 80, 160, 320, 640, 1280, 2560, 5120]
+
+# Paper-scale A5.  The base config is the fast iteration model; this one is for
+# the 4-GPU node.  A5 is solved with a pure transition and a learned initial
+# state; the input gate is intentionally disabled to isolate the transition.
+model:
+  d_model: 384
+  n_layers: 2
+  n_slots: 8
+  slot_dim: 32
+  block_size: 8
+  state_type: block_diagonal
+  transition_norm: softmax
+  transition_temperature: 0.5
+  transition_chunk_size: 32
+  gate_mode: constant
+  constant_gate: 1.0
+  initial_state: learned
+  token_conv_kernel: 1
+  readout: gated_linear
+  readout_hidden: 64
+  readout_rank: 16
+
+train:
+  steps: 50000
+  batch_size: 128
+  lr: 0.001
+  weight_decay: 0.01
+  grad_clip: 1.0
+  warmup_steps: 500
+  schedule: cosine
+  log_every: 100
+  eval_every: 2500
+  eval_batches: 4
+  eval_batch_size: 16
+  save_checkpoint: true

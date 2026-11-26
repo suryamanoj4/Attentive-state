@@ -1,0 +1,44 @@
+name: parity
+seed: 0
+device: auto
+output_dir: runs
+
+task:
+  name: parity
+  group:
+    group: Z2
+    train_min_len: 3
+    train_max_len: 40
+    eval_lengths: [40, 80, 160, 320, 640, 1280, 2560, 5120]
+
+model:
+  d_model: 64
+  n_layers: 1
+  n_slots: 1
+  slot_dim: 16
+  block_size: 2
+  state_type: block_diagonal
+  transition_norm: softmax
+  transition_temperature: 0.5
+  transition_chunk_size: 64
+  gate_mode: constant
+  constant_gate: 1.0
+  initial_state: learned
+  token_conv_kernel: 1
+  readout: gated_linear
+  readout_hidden: 32
+  readout_rank: 4
+
+train:
+  steps: 5000
+  batch_size: 128
+  lr: 0.001
+  weight_decay: 0.01
+  grad_clip: 1.0
+  warmup_steps: 100
+  schedule: cosine
+  log_every: 100
+  eval_every: 500
+  eval_batches: 4
+  eval_batch_size: 64
+  save_checkpoint: true
