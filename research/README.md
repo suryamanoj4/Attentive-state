@@ -16,8 +16,10 @@ The short version: attention over recurrent state slots can strictly enlarge the
 | [`literature-survey.md`](literature-survey.md) | ~11k-word survey of RNNs, SSMs, CDEs, linear attention/delta rule, recall, multi-scale state, depth attention, expressivity, and parallelization. |
 | [`idea-analysis.md`](idea-analysis.md) | The full analysis of the original architecture idea: four variants, prior-art map, what attention buys, the cascade, corrections to the informal claims. |
 | [`code-and-pilot-log.md`](code-and-pilot-log.md) | The implementation status, design decisions that matter for the science, commands, and the first smoke/pilot runs (A5 learnability and the MQAR readout pilot). |
-| `papers/` | Plain-text copies of ~57 primary sources. |
-| `raw/` | HTML/PDF/metadata used to build the notes. |
+
+The downloaded source copies (`papers/`, `raw/`) are not tracked in git and have
+been removed to keep the repository small. The survey cites primary sources by
+arXiv ID; re-download a source if you need to re-check a specific claim.
 
 ## Chosen direction
 

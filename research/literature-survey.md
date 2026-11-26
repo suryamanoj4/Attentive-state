@@ -14,7 +14,10 @@
 | `theory-notes.md` | Theorem statements and proof sketches for the limits paper. |
 | `experiment-plan.md` | A falsifiable experimental programme sized to the available hardware: benchmarks, baselines, ablations, metrics, and go/no-go criteria. |
 | `idea-analysis.md` | A precise restatement of the original architecture idea, its formal variants, what is novel, what is already covered, and the main failure modes. |
-| `raw/` | Downloaded source texts and metadata used to write the survey. |
+| `code-and-pilot-log.md` | Implementation status, design decisions, and the first pilot runs. |
+
+The downloaded source texts and metadata are not included in the repository;
+citations below use arXiv IDs.
 
 ---
 
