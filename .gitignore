@@ -11,13 +11,14 @@ htmlcov/
 build/
 dist/
 
-# Experiments: logs, runs, checkpoints, caches
-runs/
-logs/
-checkpoints/
-outputs/
-wandb/
-data/
+# Experiments: logs, runs, checkpoints, caches (root-level only; do not hide
+# source packages such as src/readout_recurrence/data/)
+/runs/
+/logs/
+/checkpoints/
+/outputs/
+/wandb/
+/data/
 *.pt
 *.ckpt
 *.log
