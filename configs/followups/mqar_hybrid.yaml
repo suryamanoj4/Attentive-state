@@ -1,0 +1,48 @@
+name: mqar_hybrid
+seed: 0
+device: auto
+output_dir: runs
+
+# Hybrid follow-up: the gated combination underperformed attention alone in the
+# smoke pilot.  Test gate bias (favouring attention or the linear branch) and
+# whether the attention branch's output gate is the problem.
+task:
+  name: mqar
+  mqar:
+    n_keys: 64
+    n_values: 64
+    n_pairs: 16
+    n_queries: 16
+    n_distractors: 16
+    eval_pairs: [8, 16, 32, 64]
+    eval_distractors: [0, 16, 64]
+
+model:
+  d_model: 128
+  n_layers: 2
+  n_slots: 4
+  slot_dim: 32
+  block_size: 4
+  state_type: block_diagonal
+  transition_norm: softmax
+  transition_chunk_size: 64
+  token_conv_kernel: 4
+  readout: hybrid
+  readout_hidden: 64
+  readout_rank: 8
+  attention_output_gate: false
+  hybrid_gate_bias_init: 2.0
+
+train:
+  steps: 20000
+  batch_size: 64
+  lr: 0.001
+  weight_decay: 0.01
+  grad_clip: 1.0
+  warmup_steps: 200
+  schedule: cosine
+  log_every: 500
+  eval_every: 1000
+  eval_batches: 4
+  eval_batch_size: 64
+  save_checkpoint: true

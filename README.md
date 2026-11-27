@@ -60,6 +60,11 @@ A smoke run writes `runs/<name>_seed<seed>/` containing `config.yaml`,
 | `configs/a5_large.yaml` | 623k | paper-scale A5 on the GPU node |
 | `configs/parity_base.yaml` | 10.5k | parity sanity check |
 | `configs/copy_base.yaml` | 126k | copying pilot |
+| `configs/followups/h2_block_dense.yaml` | 188k | H2 compression grid on the block-dense state |
+| `configs/followups/rank_sweep.yaml` | 234k | H3 `input_linear` rank sweep |
+| `configs/followups/a5_slot_ablation.yaml` | 100k | H4 slot/readout ablation at matched state width |
+| `configs/followups/a5_cascade_init.yaml` | 135k | cascade leakage-initialisation study |
+| `configs/followups/mqar_hybrid.yaml` | 213k | hybrid gate/output-gate study |
 
 The `large` configs are still small by LM standards; the paper’s claim is
 mechanistic, not a scaling claim. Use `base` for iteration and `large` for the
@@ -115,6 +120,12 @@ The code uses source slots `j <= i` (block **lower**-triangular with destination
 triangular convention; the two differ only by slot ordering/transpose and have the
 same closure and stability proofs.
 
+For `cascade_chain`, `cascade_full`, and `full`, `model.cascade_init: block_diagonal`
+starts the cross-slot logits closed (a learnable scalar gate initialized at
+`-10`) and lets training open leakage. This separates “the cascade can contain
+the block-diagonal solution” from “the cascade finds it under gradient descent.”
+The default `random` preserves the original behaviour.
+
 The transition is input-dependent and normalised either row-wise with a softmax
 (`transition_norm: softmax`, positive, row-stochastic) or row-wise L1 after `tanh`
 (`transition_norm: signed_l1`, signed, stable). By default the state update is a
@@ -147,11 +158,18 @@ class.
 | `mlp` | MLP over the flattened state | nonlinear state-only readout |
 | `attention` | softmax over state slots with `Q(u_t)`, `K(H_t)`, `V(H_t)` | content-based depth attention |
 | `hybrid` | gate between `attention` and `gated_linear` | does attention add anything on top? |
+| `slot_gated` | per-slot linear logits + input-only softmax slot gate | H4: can input-only slot selection replace state-content attention? |
+| `slot_max` | per-slot linear logits + hard max over slots | H4: non-attention slot-selection control |
 
 `input_linear` is the closest implementation of the `C_t H_t` family in the theory.
 `gated_linear` is the important control: its weights depend on the input but not on
 the state, so it is still “linear readout” in the sense of the separation argument.
-`attention` is the only readout whose weights depend on the state itself.
+`attention` is the readout whose mixing weights depend on the state itself.
+`slot_gated` can select slots but its gate sees only the input; `slot_max` selects
+by the largest per-slot logit. The pair distinguishes **state-content attention**
+from **slot selection**. The hybrid gate bias is configurable via
+`model.hybrid_gate_bias_init`; positive values favour attention, negative values
+favour the gated-linear branch.
 
 The readout's input-side features are the **token encoder output only**, not the
 post-layer residual. The residual contains a projection of the recurrent state;
@@ -193,7 +211,7 @@ src/readout_recurrence/
     copy.py                  copying
   models/
     layers.py                token encoder, block transition, recurrent layer
-    readouts.py              linear / input-linear / gated / MLP / attention / hybrid
+    readouts.py              linear / input-linear / gated / MLP / attention / hybrid / slot controls
     model.py                 full model and parameter counting
   training/
     loop.py                  training loop, eval, logging, checkpoints
@@ -250,15 +268,71 @@ uv run readout-recurrence sweep ... --shard 3/4 --device cuda:3
 Aggregate the results:
 
 ```bash
-uv run readout-recurrence aggregate --runs runs/mqar_sweep --output runs/mqar_sweep/summary.csv
+uv run readout-recurrence aggregate \
+  --runs runs/mqar_sweep \
+  --output runs/mqar_sweep/aggregate
 ```
+
+## Follow-up controls
+
+The first full run exposed four issues that the follow-up configs isolate:
+
+- **H2 was swept on the diagonal state**, where the readout gap is zero. Run it
+  on the block-dense state instead:
+
+  ```bash
+  make followup-h2
+  # or:
+  uv run readout-recurrence sweep \
+    --config configs/followups/h2_block_dense.yaml \
+    --grid model.readout=gated_linear,attention \
+    --grid task.mqar.n_pairs=8,16,32,64 \
+    --grid task.mqar.n_distractors=0,16,64 \
+    --seeds 0,1,2 --match-params
+  ```
+
+- **The rank-8 `input_linear` is not a full `C_t H_t` control.** Sweep the rank:
+
+  ```bash
+  make followup-rank
+  # model.readout_rank=8,16,32,64
+  ```
+
+- **The A5 gain is likely slot selection.** Keep the state width at 128 and vary
+  the slot partition, with attention and non-attention slot readouts:
+
+  ```bash
+  make followup-slots
+  # L=1,d=128; L=2,d=64; L=4,d=32; L=8,d=16
+  # readouts: attention, slot_gated, slot_max, gated_linear, linear
+  ```
+
+- **The cascade did not match block-dense.** Compare random leakage
+  initialisation with a block-diagonal start that must learn to open:
+
+  ```bash
+  make followup-cascade
+  ```
+
+- **The hybrid underperformed attention alone.** Test gate bias and the attention
+  branch output gate:
+
+  ```bash
+  make followup-hybrid
+  ```
+
+All follow-up sweeps use `--match-params` where the comparison is between
+readout families. The rank sweep deliberately does not, because rank is the
+independent variable.
 
 ## Design notes and gotchas
 
-- **Parameter matching is not automatic yet.** Every run logs total and per-module
-  parameter counts. For headline comparisons, choose readout widths that land within
-  about 1%, or add an explicit parameter-matched adapter. The `gated_linear` and
-  `attention` readouts are designed to be close at the same `readout_hidden`.
+- **Use `--match-params` for readout-family comparisons.** It adds a residual
+  linear adapter to the smaller readouts within each recurrence geometry. Every run
+  still logs total and per-module parameter counts; report both the natural readout
+  size and the padded budget. For the linear readout, padding parameters does not
+  increase its effective number of state functionals (`out_dim × state_dim`), so
+  the adapter is a parameter-count control, not a capacity control.
 - **The softmax transition is positive and row-stochastic.** It can represent
   permutations in the sharp limit, which is what the group tasks need, but it cannot
   represent signed dense transitions. Use `transition_norm: signed_l1` for that

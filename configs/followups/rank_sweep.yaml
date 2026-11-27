@@ -1,0 +1,45 @@
+name: mqar_rank
+seed: 0
+device: auto
+output_dir: runs
+
+# H3 follow-up: the rank-8 input_linear readout underfit at base scale.
+# Sweep model.readout_rank over 8,16,32,64 (and optionally 0 for full rank).
+task:
+  name: mqar
+  mqar:
+    n_keys: 64
+    n_values: 64
+    n_pairs: 16
+    n_queries: 16
+    n_distractors: 16
+    eval_pairs: [8, 16, 32, 64]
+    eval_distractors: [0, 16, 64]
+
+model:
+  d_model: 128
+  n_layers: 2
+  n_slots: 4
+  slot_dim: 32
+  block_size: 4
+  state_type: block_diagonal
+  transition_norm: softmax
+  transition_chunk_size: 64
+  token_conv_kernel: 4
+  readout: input_linear
+  readout_hidden: 64
+  readout_rank: 8
+
+train:
+  steps: 20000
+  batch_size: 64
+  lr: 0.001
+  weight_decay: 0.01
+  grad_clip: 1.0
+  warmup_steps: 200
+  schedule: cosine
+  log_every: 500
+  eval_every: 1000
+  eval_batches: 4
+  eval_batch_size: 64
+  save_checkpoint: true

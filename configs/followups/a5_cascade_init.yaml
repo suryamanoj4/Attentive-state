@@ -1,0 +1,48 @@
+name: a5_cascade_init
+seed: 0
+device: auto
+output_dir: runs
+
+# Cascade follow-up: start with block-diagonal transitions and let the model
+# learn to open cross-slot leakage.  Compare model.cascade_init=random vs
+# block_diagonal, and readouts linear vs attention.
+task:
+  name: a5
+  group:
+    group: A5
+    train_min_len: 3
+    train_max_len: 20
+    eval_lengths: [20, 40, 80, 160, 320, 640, 1280, 2560, 5120]
+
+model:
+  d_model: 128
+  n_layers: 1
+  n_slots: 4
+  slot_dim: 32
+  block_size: 8
+  state_type: cascade_chain
+  cascade_init: block_diagonal
+  transition_norm: softmax
+  transition_temperature: 0.5
+  transition_chunk_size: 64
+  gate_mode: constant
+  constant_gate: 1.0
+  initial_state: learned
+  token_conv_kernel: 1
+  readout: attention
+  readout_hidden: 64
+  readout_rank: 8
+
+train:
+  steps: 50000
+  batch_size: 128
+  lr: 0.001
+  weight_decay: 0.01
+  grad_clip: 1.0
+  warmup_steps: 200
+  schedule: cosine
+  log_every: 1000
+  eval_every: 2500
+  eval_batches: 4
+  eval_batch_size: 16
+  save_checkpoint: true
