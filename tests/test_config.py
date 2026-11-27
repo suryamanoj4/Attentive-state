@@ -21,6 +21,11 @@ def test_diagonal_forces_block_size_one():
     assert cfg.model.block_size == 1
 
 
+def test_cascade_init_validation():
+    with pytest.raises(ValueError, match="cascade_init"):
+        ExperimentConfig.from_dict({"model": {"cascade_init": "not-a-mode"}})
+
+
 def test_block_size_must_divide_slot_dim():
     with pytest.raises(ValueError, match="divide"):
         ExperimentConfig.from_dict(

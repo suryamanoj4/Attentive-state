@@ -94,6 +94,20 @@ class BlockTransition(nn.Module):
         self.register_buffer("source_mask", source_mask, persistent=False)
         self.n_sources = int(source_index.shape[1])
 
+        # Cross-slot (leakage) source mask.  For cascade/full state types this
+        # lets ``cascade_init='block_diagonal'`` start from a block-diagonal
+        # transition and learn to open leakage through a scalar gate.
+        dest = torch.arange(self.n_slots).view(self.n_slots, 1)
+        cross_mask = (source_index != dest) & source_mask
+        self.register_buffer("cross_mask", cross_mask, persistent=False)
+        self.has_cross = bool(cross_mask.any())
+        if self.has_cross and config.cascade_init == "block_diagonal":
+            # sigmoid(-10) ~= 4.5e-5: cross-source logits are effectively masked
+            # at initialization, but the gate can open during training.
+            self.leakage_logit = nn.Parameter(torch.tensor(-10.0))
+        else:
+            self.leakage_logit = None
+
         self.slot_emb = nn.Parameter(torch.randn(self.n_slots, config.d_model) * 0.02)
         self.out_size = self.n_blocks * self.block_size * self.n_sources * self.block_size
         self._needs_projection = not (self.state_type == "diagonal" and self.norm == "softmax")
@@ -161,6 +175,36 @@ class BlockTransition(nn.Module):
     # ------------------------------------------------------------------
     # Transition computation
     # ------------------------------------------------------------------
+    def _gate_cross_logits(self, logits: torch.Tensor) -> torch.Tensor:
+        """Attenuate cross-slot logits when block-diagonal initialisation is on.
+
+        The self-slot logits are untouched.  For softmax transitions the closed
+        cross logits are set to a large negative value; for signed-L1 transitions
+        they are set to zero.  Both are differentiable in the scalar gate.
+        """
+        if self.leakage_logit is None:
+            return logits
+        view = logits.view(
+            *logits.shape[:-1],
+            self.n_sources,
+            self.block_size,
+        )
+        prefix = view.shape[:-5]
+        mask = self.cross_mask.view(
+            *([1] * len(prefix)),
+            self.n_slots,
+            1,
+            1,
+            self.n_sources,
+            1,
+        )
+        leak = torch.sigmoid(self.leakage_logit)
+        if self.norm == "softmax":
+            gated = torch.where(mask, leak * view + (1.0 - leak) * (-10.0), view)
+        else:
+            gated = torch.where(mask, leak * view, view)
+        return gated.reshape(logits.shape)
+
     def project(self, z: torch.Tensor) -> torch.Tensor | None:
         """Map input features to block-row logits.
 
@@ -173,12 +217,13 @@ class BlockTransition(nn.Module):
         # The caller has already added the per-slot embedding, so ``z`` has
         # shape (..., L, d_model) here.
         logits = self.proj(z) + self.slot_bias
-        return logits.view(
+        logits = logits.view(
             *logits.shape[:-1],
             self.n_blocks,
             self.block_size,
             self.n_sources * self.block_size,
         )
+        return self._gate_cross_logits(logits)
 
     def normalize(self, logits: torch.Tensor | None) -> torch.Tensor | None:
         """Turn block-row logits into a transition matrix."""

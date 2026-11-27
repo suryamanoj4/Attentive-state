@@ -121,6 +121,87 @@ class GatedLinearReadout(Readout):
         return self.out(self.dropout(g * h)), {}
 
 
+class SlotGatedReadout(Readout):
+    """Per-slot linear logits combined by an input-only softmax slot gate.
+
+    This is the strongest H4 / "slots, not attention" control.  It can select a
+    slot per token, but its gate sees only the input features ``x``, never the
+    state.  If this matches the attention readout, the gain is slot selection and
+    input gating rather than state-content attention.
+    """
+
+    def __init__(
+        self,
+        n_slots: int,
+        slot_dim: int,
+        d_model: int,
+        out_dim: int,
+        temperature: float = 1.0,
+        slot_bias: bool = True,
+        dropout: float = 0.0,
+    ) -> None:
+        super().__init__()
+        self.out_dim = out_dim
+        self.n_slots = n_slots
+        self.temperature = temperature
+        self.slot_projs = nn.ModuleList([nn.Linear(slot_dim, out_dim) for _ in range(n_slots)])
+        self.gate = nn.Linear(d_model, n_slots)
+        self.slot_bias = nn.Parameter(torch.zeros(n_slots)) if slot_bias else None
+        self.dropout = nn.Dropout(dropout)
+
+    def forward(self, states: torch.Tensor, x: torch.Tensor) -> tuple[torch.Tensor, Aux]:
+        batch, length, n_slots, _ = states.shape
+        if n_slots != self.n_slots:
+            raise ValueError("state slot count does not match the readout")
+        per_slot = torch.stack(
+            [proj(states[:, :, i, :]) for i, proj in enumerate(self.slot_projs)],
+            dim=2,
+        )  # (B, T, L, out_dim)
+        scores = self.gate(x) / self.temperature
+        if self.slot_bias is not None:
+            scores = scores + self.slot_bias.view(1, 1, -1)
+        weights = torch.softmax(scores, dim=-1)
+        out = torch.einsum("btl,btlo->bto", weights, per_slot)
+        with torch.no_grad():
+            entropy = -(weights * (weights + 1e-9).log()).sum(dim=-1).mean()
+            max_weight = weights.max(dim=-1).values.mean()
+        return self.dropout(out), {
+            "slot_entropy": entropy,
+            "slot_max": max_weight,
+        }
+
+
+class SlotMaxReadout(Readout):
+    """Per-slot linear logits with a hard max over slots.
+
+    A nonlinear, non-attention slot-selection control.  It can choose a different
+    slot per output class, but has no learned softmax routing.
+    """
+
+    def __init__(
+        self,
+        n_slots: int,
+        slot_dim: int,
+        out_dim: int,
+        dropout: float = 0.0,
+    ) -> None:
+        super().__init__()
+        self.out_dim = out_dim
+        self.n_slots = n_slots
+        self.slot_projs = nn.ModuleList([nn.Linear(slot_dim, out_dim) for _ in range(n_slots)])
+        self.dropout = nn.Dropout(dropout)
+
+    def forward(self, states: torch.Tensor, x: torch.Tensor) -> tuple[torch.Tensor, Aux]:
+        batch, length, n_slots, _ = states.shape
+        if n_slots != self.n_slots:
+            raise ValueError("state slot count does not match the readout")
+        per_slot = torch.stack(
+            [proj(states[:, :, i, :]) for i, proj in enumerate(self.slot_projs)],
+            dim=2,
+        )  # (B, T, L, out_dim)
+        return self.dropout(per_slot.max(dim=2).values), {}
+
+
 class MLPReadout(Readout):
     """A two-layer MLP over the flattened state (nonlinear in ``H``)."""
 
@@ -247,6 +328,8 @@ class HybridReadout(Readout):
         temperature: float = 1.0,
         slot_bias: bool = True,
         query_mode: str = "content",
+        output_gate: bool = True,
+        gate_bias_init: float = 0.0,
         dropout: float = 0.0,
     ) -> None:
         super().__init__()
@@ -260,7 +343,7 @@ class HybridReadout(Readout):
             temperature=temperature,
             slot_bias=slot_bias,
             query_mode=query_mode,
-            output_gate=True,
+            output_gate=output_gate,
             dropout=dropout,
         )
         self.linear = GatedLinearReadout(
@@ -271,7 +354,7 @@ class HybridReadout(Readout):
             dropout=dropout,
         )
         self.gate = nn.Linear(d_model, out_dim)
-        nn.init.zeros_(self.gate.bias)
+        nn.init.constant_(self.gate.bias, gate_bias_init)
 
     def forward(self, states: torch.Tensor, x: torch.Tensor) -> tuple[torch.Tensor, Aux]:
         attn_out, aux = self.attention(states, x)
@@ -359,6 +442,23 @@ def build_readout(
             hidden=config.readout_hidden,
             dropout=config.readout_dropout,
         )
+    if config.readout == "slot_gated":
+        return SlotGatedReadout(
+            n_slots=n_slots,
+            slot_dim=slot_dim,
+            d_model=d_model,
+            out_dim=out_dim,
+            temperature=config.attention_temperature,
+            slot_bias=config.attention_slot_bias,
+            dropout=config.readout_dropout,
+        )
+    if config.readout == "slot_max":
+        return SlotMaxReadout(
+            n_slots=n_slots,
+            slot_dim=slot_dim,
+            out_dim=out_dim,
+            dropout=config.readout_dropout,
+        )
     if config.readout == "attention":
         return AttentionReadout(
             n_slots=n_slots,
@@ -382,6 +482,8 @@ def build_readout(
             temperature=config.attention_temperature,
             slot_bias=config.attention_slot_bias,
             query_mode=config.attention_query_mode,
+            output_gate=config.attention_output_gate,
+            gate_bias_init=config.hybrid_gate_bias_init,
             dropout=config.readout_dropout,
         )
     raise ValueError(f"unknown readout: {config.readout}")

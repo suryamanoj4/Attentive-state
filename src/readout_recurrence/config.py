@@ -29,6 +29,8 @@ READOUTS = {
     "mlp",
     "attention",
     "hybrid",
+    "slot_gated",
+    "slot_max",
 }
 TRANSITION_NORMS = {"softmax", "signed_l1"}
 QUERY_MODES = {"content", "constant", "random"}
@@ -159,6 +161,10 @@ class ModelConfig:
     transition_norm: str = "softmax"
     transition_temperature: float = 1.0
     transition_chunk_size: int = 64
+    # ``block_diagonal`` starts cascade/full cross-slot leakage at zero and lets
+    # the model open it through a learnable gate.  ``random`` is the original
+    # behaviour.  This is the cascade-optimization control.
+    cascade_init: str = "random"
 
     # Input encoder.
     token_conv_kernel: int = 1
@@ -190,6 +196,9 @@ class ModelConfig:
     attention_slot_bias: bool = True
     attention_query_mode: str = "content"
     attention_output_gate: bool = True
+    # Positive favours the attention branch in the hybrid, negative favours the
+    # gated-linear branch.
+    hybrid_gate_bias_init: float = 0.0
 
     def __post_init__(self) -> None:
         # The diagonal state type is the block_size=1 special case.  Normalising
@@ -216,6 +225,8 @@ class ModelConfig:
                 raise ValueError("diagonal state_type requires block_size == 1")
         elif self.block_size < 1 or self.slot_dim % self.block_size != 0:
             raise ValueError("model.block_size must divide model.slot_dim")
+        if self.cascade_init not in {"random", "block_diagonal"}:
+            raise ValueError("model.cascade_init must be 'random' or 'block_diagonal'")
         if self.readout not in READOUTS:
             raise ValueError(f"model.readout must be one of {sorted(READOUTS)}")
         if self.readout_hidden < 1:

@@ -13,7 +13,16 @@ from readout_recurrence.models import (
 from readout_recurrence.models.layers import BlockTransition
 
 STATE_TYPES = ["diagonal", "block_diagonal", "cascade_chain", "cascade_full", "full"]
-READOUTS = ["linear", "input_linear", "gated_linear", "mlp", "attention", "hybrid"]
+READOUTS = [
+    "linear",
+    "input_linear",
+    "gated_linear",
+    "mlp",
+    "attention",
+    "hybrid",
+    "slot_gated",
+    "slot_max",
+]
 
 
 def make_config(state_type: str, readout: str) -> ExperimentConfig:
@@ -130,6 +139,46 @@ def test_transition_rows_are_normalized(state_type: str):
     assert torch.allclose(matrix.sum(dim=-1), torch.ones_like(matrix.sum(dim=-1)))
 
 
+@pytest.mark.parametrize("state_type", ["cascade_chain", "cascade_full", "full"])
+@pytest.mark.parametrize("norm", ["softmax", "signed_l1"])
+def test_cascade_block_diagonal_init_closes_cross_slots(state_type: str, norm: str):
+    cfg = ExperimentConfig.from_dict(
+        {
+            "model": {
+                "d_model": 16,
+                "n_slots": 4,
+                "slot_dim": 12,
+                "block_size": 3,
+                "state_type": state_type,
+                "transition_norm": norm,
+                "cascade_init": "block_diagonal",
+            },
+            "train": {"steps": 1},
+        }
+    ).model
+    transition = BlockTransition(cfg)
+    assert transition.leakage_logit is not None
+    matrix = transition.normalize(transition.project(torch.randn(2, 4, 16)))
+    assert matrix is not None
+    view = matrix.view(
+        2,
+        4,
+        transition.n_blocks,
+        transition.block_size,
+        transition.n_sources,
+        transition.block_size,
+    )
+    cross = transition.cross_mask.view(1, 4, 1, 1, transition.n_sources, 1)
+    if norm == "softmax":
+        cross_mass = (view * cross).sum(dim=(4, 5))
+        total_mass = view.sum(dim=(4, 5)).clamp_min(1e-9)
+    else:
+        # Signed-L1 rows sum to one in absolute value, not in signed value.
+        cross_mass = (view.abs() * cross).sum(dim=(4, 5))
+        total_mass = view.abs().sum(dim=(4, 5)).clamp_min(1e-9)
+    assert (cross_mass / total_mass).max().item() < 1e-3
+
+
 def test_cascade_source_masks():
     cfg = ExperimentConfig.from_dict(
         {
@@ -169,6 +218,44 @@ def test_readout_input_is_token_encoding_only():
     assert torch.allclose(captured["x"], expected)
     # The state itself still reaches the readout as the first argument.
     assert captured["x"].shape == (2, batch.input_ids.shape[1], cfg.model.d_model)
+
+
+def test_hybrid_gate_bias_control():
+    cfg = ExperimentConfig.from_dict(
+        {
+            "model": {
+                "d_model": 16,
+                "n_slots": 2,
+                "slot_dim": 8,
+                "block_size": 2,
+                "state_type": "block_diagonal",
+                "readout": "hybrid",
+                "readout_hidden": 8,
+                "hybrid_gate_bias_init": 2.0,
+            },
+            "task": {
+                "name": "mqar",
+                "mqar": {
+                    "n_keys": 8,
+                    "n_values": 8,
+                    "n_pairs": 2,
+                    "n_queries": 2,
+                    "eval_pairs": [2],
+                    "eval_distractors": [0],
+                },
+            },
+            "train": {"steps": 1},
+        }
+    )
+    task = build_task(cfg.task, seed=0)
+    model = build_model(cfg.model, task.vocab_size, task.out_dim)
+    assert torch.allclose(
+        model.readout.gate.bias,
+        torch.full_like(model.readout.gate.bias, 2.0),
+    )
+    batch = task.sample(2)
+    logits, _ = model(batch.input_ids)
+    assert logits.shape == (2, batch.input_ids.shape[1], task.out_dim)
 
 
 def test_readout_param_adapter():

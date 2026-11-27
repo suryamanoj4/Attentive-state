@@ -9,7 +9,16 @@ from readout_recurrence.models import build_model
 from readout_recurrence.models.layers import TokenEncoder
 
 STATE_TYPES = ["diagonal", "block_diagonal", "cascade_chain", "cascade_full", "full"]
-READOUTS = ["linear", "input_linear", "gated_linear", "mlp", "attention", "hybrid"]
+READOUTS = [
+    "linear",
+    "input_linear",
+    "gated_linear",
+    "mlp",
+    "attention",
+    "hybrid",
+    "slot_gated",
+    "slot_max",
+]
 
 
 def make_config(state_type: str, readout: str) -> ExperimentConfig:

@@ -10,6 +10,8 @@ from .readouts import (
     HybridReadout,
     InputLinearReadout,
     MLPReadout,
+    SlotGatedReadout,
+    SlotMaxReadout,
     StateLinearReadout,
     build_readout,
 )
@@ -23,6 +25,8 @@ __all__ = [
     "MLPReadout",
     "RecurrentLayer",
     "RecurrentModel",
+    "SlotGatedReadout",
+    "SlotMaxReadout",
     "StateLinearReadout",
     "TokenEncoder",
     "build_model",
