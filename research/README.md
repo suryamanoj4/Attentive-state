@@ -16,6 +16,7 @@ The short version: attention over recurrent state slots can strictly enlarge the
 | [`literature-survey.md`](literature-survey.md) | ~11k-word survey of RNNs, SSMs, CDEs, linear attention/delta rule, recall, multi-scale state, depth attention, expressivity, and parallelization. |
 | [`idea-analysis.md`](idea-analysis.md) | The full analysis of the original architecture idea: four variants, prior-art map, what attention buys, the cascade, corrections to the informal claims. |
 | [`code-and-pilot-log.md`](code-and-pilot-log.md) | The implementation status, design decisions that matter for the science, commands, and the first smoke/pilot runs (A5 learnability and the MQAR readout pilot). |
+| [`results.md`](results.md) | Combined 60-run full study and 93-run follow-up: A5 transitions, cascade initialization, MQAR H1/H2, rank, slot ablation, hybrid, efficiency, and the updated complete picture. |
 
 The downloaded source copies (`papers/`, `raw/`) are not tracked in git and have
 been removed to keep the repository small. The survey cites primary sources by
@@ -75,7 +76,8 @@ The main risk is the proofs. The plan is a theory co-author for Propositions 1â€
 - Code: first implementation pass complete (`src/readout_recurrence/`, `configs/`, `tests/`, `Makefile`). MQAR, A5/S5/parity, copying, all five state types, six readouts, sweeps, aggregation, and plots are implemented. Tests pass.
 - Pilot runs: A5 is learnable with the current transition/initial-state design (99.2% at length 8, 86.0% at length 16 after 20k tiny-model steps). On the corrected MQAR harness, attention reaches 48.6% on 4 pairs vs. 25.0% for matched gated linear; the full `C_t H_t` readout matches attention (48.6%), and the hybrid is worse (35.9%). One seed, 5k steps â€” a signal, not a result. See [`code-and-pilot-log.md`](code-and-pilot-log.md).
 - A readout state leak was found and fixed: the readout input is now the token-encoder output only, not the post-layer residual. A regression test enforces it; pre-fix runs are contaminated.
-- Next: (1) run the H1/H2 readout sweep on MQAR with 3 seeds and an LR sweep, including a full `C_t H_t` control, (2) run the A5 transition comparison at 50k steps, (3) test H5 finite-width routing, (4) investigate the hybrid failure, (5) tighten Proposition 1 and the scalar `L=2, d=1` proof.
+- Full experiments: 60-run study and 93-run follow-up complete (153 runs, 0 failures). Combined results, tables, and revised claims are in [`results.md`](results.md).
+- Next: (1) H2 capacity bridge at H1 budget/query settings, (2) cascade seed-robustness check, (3) slot geometry control separating slot count from slot width, (4) hybrid gate diagnostics, (5) review Proposition 1 and the scalar `L=2, d=1` proof.
 
 ## Code quickstart
 
