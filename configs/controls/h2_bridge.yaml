@@ -1,0 +1,50 @@
+name: h2_bridge
+seed: 0
+device: auto
+output_dir: runs
+
+# H2 capacity bridge: the H1 block-dense task (16 pairs / 16 distractors,
+# 16 queries) with an explicit readout budget.  The sweep overrides
+# model.readout_param_budget so attention and gated linear are compared at
+# 24,708 (H2 natural), 32,768 (both adapted), and 66,624 (H1 budget).
+task:
+  name: mqar
+  mqar:
+    n_keys: 64
+    n_values: 64
+    n_pairs: 16
+    n_queries: 16
+    n_distractors: 16
+    eval_pairs: [8, 16, 32, 64]
+    eval_distractors: [16, 64]
+
+model:
+  d_model: 128
+  n_layers: 2
+  n_slots: 4
+  slot_dim: 32
+  block_size: 4
+  state_type: block_diagonal
+  transition_norm: softmax
+  transition_temperature: 1.0
+  transition_chunk_size: 64
+  token_conv_kernel: 4
+  readout: gated_linear
+  readout_hidden: 64
+  readout_rank: 8
+  readout_param_budget: 66624
+  attention_temperature: 1.0
+
+train:
+  steps: 20000
+  batch_size: 64
+  lr: 0.001
+  weight_decay: 0.01
+  grad_clip: 1.0
+  warmup_steps: 200
+  schedule: cosine
+  log_every: 500
+  eval_every: 1000
+  eval_batches: 4
+  eval_batch_size: 64
+  save_checkpoint: true

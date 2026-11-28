@@ -179,6 +179,26 @@ def test_cascade_block_diagonal_init_closes_cross_slots(state_type: str, norm: s
     assert (cross_mass / total_mass).max().item() < 1e-3
 
 
+def test_cascade_leakage_init_value():
+    cfg = ExperimentConfig.from_dict(
+        {
+            "model": {
+                "d_model": 16,
+                "n_slots": 4,
+                "slot_dim": 12,
+                "block_size": 3,
+                "state_type": "cascade_chain",
+                "cascade_init": "block_diagonal",
+                "cascade_leakage_init": -6.0,
+            },
+            "train": {"steps": 1},
+        }
+    ).model
+    transition = BlockTransition(cfg)
+    assert transition.leakage_logit is not None
+    assert transition.leakage_logit.item() == pytest.approx(-6.0)
+
+
 def test_cascade_source_masks():
     cfg = ExperimentConfig.from_dict(
         {

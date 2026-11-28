@@ -165,6 +165,10 @@ class ModelConfig:
     # the model open it through a learnable gate.  ``random`` is the original
     # behaviour.  This is the cascade-optimization control.
     cascade_init: str = "random"
+    # Initial logit for the cross-slot leakage gate when
+    # ``cascade_init='block_diagonal'``.  More negative means more tightly
+    # closed at initialization.
+    cascade_leakage_init: float = -10.0
 
     # Input encoder.
     token_conv_kernel: int = 1

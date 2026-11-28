@@ -102,9 +102,13 @@ class BlockTransition(nn.Module):
         self.register_buffer("cross_mask", cross_mask, persistent=False)
         self.has_cross = bool(cross_mask.any())
         if self.has_cross and config.cascade_init == "block_diagonal":
-            # sigmoid(-10) ~= 4.5e-5: cross-source logits are effectively masked
-            # at initialization, but the gate can open during training.
-            self.leakage_logit = nn.Parameter(torch.tensor(-10.0))
+            # The default logit -10 gives sigmoid(-10) ~= 4.5e-5: cross-source
+            # logits are effectively masked at initialization, but the gate can
+            # open during training.  ``cascade_leakage_init`` controls how
+            # tightly closed the gate starts.
+            self.leakage_logit = nn.Parameter(
+                torch.tensor(float(config.cascade_leakage_init))
+            )
         else:
             self.leakage_logit = None
 
